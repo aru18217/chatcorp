@@ -1,0 +1,81 @@
+.home__bg, .home__bg1, .home__bg2 {
+    height: 92vh;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    overflow-x: hidden;
+}
+
+.home__bg {
+    background-image: url(https://i.pinimg.com/564x/60/ef/9f/60ef9f4051f6659bf723ed6ce06a2016.jpg);
+}
+
+.home__bg1 {
+    background-image: url(https://i.pinimg.com/564x/04/2a/93/042a9376377eb967095b99f3239dd39a.jpg);
+}
+
+.home__bg2 {
+    /* background-image: url(C:/Users/USER/Downloads/MernChat/mern-chat-frontend/src/assets/toro.png); */
+    background-image: url(../assets/toro.png);
+
+}
+
+
+.home-message-icon {
+    margin-left: 10px;
+    display: inline-block;
+}
+
+.space-between {
+    margin-bottom: 20px; /* Adds a 2 cm (20px) margin below each image */
+}
+
+.contact-us-section {
+    background-color: #f8f9fa; /* Light grey background for the contact section */
+    padding: 40px 0;
+    margin-top: 40px; /* Add space above the contact section */
+}
+
+.contact-us-section h2 {
+    margin-bottom: 20px;
+}
+
+.contact-form-container {
+    width: 100%;
+    max-width: 800px; /* Limit form width */
+    padding: 0 20px; /* Add padding to form container */
+}
+
+/* Pastikan semua button memiliki style dasar yang sama */
+button {
+    display: flex; /* Gunakan flexbox untuk memastikan konten berada di tengah */
+    justify-content: center; /* Pusatkan secara horizontal */
+    align-items: center; /* Pusatkan secara vertikal */
+    text-align: center; /* Pastikan teks di dalam button berada di tengah */
+    padding: 10px 20px; /* Tambahkan padding untuk ukuran tombol */
+    border-radius: 4px; /* Tambahkan border radius agar sudut tombol lebih halus */
+    background-color: #007bff; /* Warna background tombol */
+    color: white; /* Warna teks */
+    border: none; /* Hilangkan border default */
+    cursor: pointer; /* Ubah kursor menjadi pointer saat hover */
+}
+
+/* Untuk tombol Login */
+button.login-btn {
+    background-color: #007bff; /* Warna tombol */
+}
+
+/* Untuk tombol Logout */
+button.logout-btn {
+    background-color: #28a745; /* Warna tombol */
+}
+
+/* Untuk tombol Signup */
+button.signup-btn {
+    background-color: #ffc107; /* Warna tombol */
+}
+
+/* Menambahkan efek hover */
+button:hover {
+    opacity: 0.9; /* Sedikit transparansi saat hover */
+}
