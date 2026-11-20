@@ -1,122 +1,58 @@
-import React, { useState } from 'react';
-import { useSelector } from 'react-redux';
-import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
-import Modal from 'react-modal';
-import { useLogoutUserMutation } from '../services/appApi';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from "react";
+import { useSelector } from "react-redux";
+import { Container, Button } from "react-bootstrap";
+import Modal from "react-modal";
+import { useLogoutUserMutation } from "../services/appApi";
+import { profileUrl } from "../config";
+import Avatar from "./Avatar";
+
+Modal.setAppElement("#root");
 
 function Profile() {
     const user = useSelector((state) => state.user);
     const [modalIsOpen, setModalIsOpen] = useState(false);
     const [logoutUser] = useLogoutUserMutation();
-    const navigate = useNavigate();
-
-    if (!user) {
-        return <p>No user data available.</p>;
-    }
-
-    const openModal = () => setModalIsOpen(true);
-    const closeModal = () => setModalIsOpen(false);
 
     async function handleLogout(e) {
         e.preventDefault();
-        await logoutUser(user);
+        await logoutUser({ newMessages: user?.newMessages || {} });
         window.location.replace("/");
     }
 
-    // async function handleHistory(){
-    //     navigate("/history")
-    // }
+    const picture = profileUrl(user.picture);
 
     return (
-        <Container className="mt-4">
-            <nav className="nav nav-borders">
-                <a className="nav-link active ms-0" href="#profile">Profile</a>
-            </nav>
-            <hr className="mt-0 mb-4" />
-            <Row>
-                <Col xl={4}>
-                    <Card className="mb-4 mb-xl-0">
-                        <Card.Header>Profile Picture</Card.Header>
-                        <Card.Body className="text-center">
-                            <img
-                                className="img-account-profile rounded-circle mb-2"
-                                src={`http://localhost:5001/uploads/profiles/${user.picture}`}
-                                alt="Profile"
-                                style={{ width: '150px', height: '150px', objectFit: 'cover', cursor: 'pointer' }}
-                                onClick={openModal}
-                            />
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col xl={8}>
-                    <Card className="mb-4">
-                        <Card.Header>Account Details</Card.Header>
-                        <Card.Body>
-                            <Form>
-                                <Form.Group className="mb-3" controlId="inputName">
-                                    <Form.Label>Name</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={user.name}
-                                        readOnly
-                                    />
-                                </Form.Group>
-                                <Form.Group className="mb-3" controlId="inputEmailAddress">
-                                    <Form.Label>Email Address</Form.Label>
-                                    <Form.Control
-                                        type="email"
-                                        value={user.email}
-                                        readOnly
-                                    />
-                                </Form.Group>
-                                <Row className="gx-3 mb-3">
-                                    <Col md={6}>
-                                        <Form.Group controlId="inputStatus">
-                                            <Form.Label>Status</Form.Label>
-                                            <Form.Control
-                                                type="text"
-                                                value={user.status}
-                                                readOnly
-                                            />
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={6}>
-                                        <Form.Group controlId="inputPassword">
-                                            <Form.Label>Password</Form.Label>
-                                            <Form.Control
-                                                type="password"
-                                                value={user.password}
-                                                readOnly
-                                            />
-                                        </Form.Group>
-                                    </Col>
-                                    {/* <Col md={6}>
-                                        <Form.Group controlId="history">
-                                            <Form.Label>History</Form.Label>
-                                            <Button onClick={handleHistory}>Lihat History</Button>
-                                        </Form.Group>
-                                    </Col> */}
-                                </Row>
+        <Container className="page">
+            <div className="profile-card">
+                <button className="profile-photo" onClick={() => picture && setModalIsOpen(true)} disabled={!picture} aria-label="View profile picture">
+                    <Avatar user={user} size={120} />
+                </button>
+                <h1 className="h3 mb-1">{user.name}</h1>
+                <p className="text-muted mb-4">{user.email}</p>
 
-                                {/* Tambahkan tombol Logout di bawah form */}
-                                <Button variant="danger" onClick={handleLogout}>
-                                    Logout
-                                </Button>
-                            </Form>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
+                <dl className="profile-meta">
+                    <div>
+                        <dt>Status</dt>
+                        <dd><span className="dot dot--online" /> Online</dd>
+                    </div>
+                    <div>
+                        <dt>Role</dt>
+                        <dd className="text-capitalize">{user.role}</dd>
+                    </div>
+                    <div>
+                        <dt>Account</dt>
+                        <dd>{user.blocked ? <span className="text-danger">Blocked</span> : "Active"}</dd>
+                    </div>
+                </dl>
 
-            {/* Modal untuk menampilkan gambar dalam ukuran besar */}
-            <Modal isOpen={modalIsOpen} onRequestClose={closeModal} style={{ content: { display: 'flex', justifyContent: 'center', alignItems: 'center' } }}>
-                <img
-                    src={`http://localhost:5001/uploads/profiles/${user.picture}`}
-                    alt="Profile"
-                    style={{ maxWidth: '90%', maxHeight: '90%' }}
-                    onClick={closeModal}
-                />
+                <Button variant="outline-danger" onClick={handleLogout}>
+                    <i className="fas fa-right-from-bracket me-2" />
+                    Logout
+                </Button>
+            </div>
+
+            <Modal isOpen={modalIsOpen} onRequestClose={() => setModalIsOpen(false)} className="photo-modal" overlayClassName="photo-modal__overlay">
+                <img src={picture} alt={`${user.name}'s profile`} onClick={() => setModalIsOpen(false)} />
             </Modal>
         </Container>
     );

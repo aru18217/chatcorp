@@ -1,0 +1,83 @@
+.chat-shell {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: calc(100vh - var(--nav-h));
+    overflow: hidden;
+    position: relative;
+}
+
+.sidebar-backdrop {
+    display: none;
+}
+
+.captcha-page {
+    min-height: calc(100vh - var(--nav-h));
+    display: grid;
+    place-items: center;
+    padding: 2rem 1rem;
+}
+.captcha-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: var(--shadow);
+    padding: 2rem;
+    text-align: center;
+}
+.captcha-card h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0.75rem 0 0.25rem;
+}
+.captcha-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    margin: 0 auto;
+    display: grid;
+    place-items: center;
+    font-size: 1.5rem;
+    background: var(--brand-50);
+    color: var(--brand);
+}
+.captcha-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    margin: 1rem 0;
+}
+.captcha-row canvas {
+    border-radius: 12px;
+    background: repeating-linear-gradient(45deg, #f8fafc 0 8px, #eef2ff 8px 16px);
+    border: 1px solid var(--line);
+    max-width: 100%;
+}
+
+@media (max-width: 767px) {
+    .chat-shell {
+        grid-template-columns: 1fr;
+    }
+    .chat-sidebar {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 86%;
+        max-width: 320px;
+        z-index: 20;
+        transform: translateX(-105%);
+        transition: transform 0.25s ease;
+    }
+    .sidebar-open .chat-sidebar {
+        transform: none;
+    }
+    .sidebar-open .sidebar-backdrop {
+        display: block;
+        position: absolute;
+        inset: 0;
+        border: 0;
+        background: rgba(15, 23, 42, 0.45);
+        z-index: 10;
+    }
+}

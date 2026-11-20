@@ -1,76 +1,102 @@
 import React from "react";
-import { Row, Col, Button, Form, Container } from "react-bootstrap";
-import { LinkContainer } from "react-router-bootstrap";
-import Chatbot from './Chatbot'; // Import Chatbot
+import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
+import Chatbot from "./Chatbot";
+import toro from "../assets/toro.png";
 import "./Home.css";
 
+const FEATURES = [
+    { icon: "fa-shield-halved", title: "AES-256 encryption", text: "Every message and file name is encrypted with AES-256 before it is stored on the server." },
+    { icon: "fa-hashtag", title: "Channels for every team", text: "Announcements, departments, projects, and casual chat, each in its own room." },
+    { icon: "fa-lock", title: "Locked meeting rooms", text: "Meeting rooms need a key, checked on the server, so only invited people get in." },
+    { icon: "fa-envelope-circle-check", title: "OTP verification", text: "New accounts confirm their email with a one-time code that expires in 10 minutes." },
+    { icon: "fa-paperclip", title: "File sharing", text: "Share documents in any room or direct message, up to 10 MB each." },
+    { icon: "fa-user-shield", title: "Admin controls", text: "Admins can review chat activity and block accounts that break the rules." },
+];
+
+const RULES = [
+    ["Professional communication", "Keep a professional tone and avoid slang in work channels."],
+    ["Confidentiality", "Share sensitive information only in direct messages or locked rooms."],
+    ["Relevance", "Post in the channel that fits the topic."],
+    ["Availability", "Your online status updates automatically when you open or close the app."],
+    ["Etiquette", "Keep messages short and don't spam."],
+];
+
 function Home() {
+    const user = useSelector((state) => state.user);
+    const ctaTo = user?.token ? "/chat" : "/login";
+
     return (
         <>
-            <Row>
-                <Col md={6} className="d-flex flex-direction-column align-items-center justify-content-center">
+            <section className="hero">
+                <div className="container-xl hero-grid">
                     <div>
-                        <h1>Connect with your team</h1>
-                        <p>Chat App keeps you in touch with your company</p>
-                        <LinkContainer to="/chat">
-                            <Button variant="success">
-                                Login <i className="fas fa-comments home-message-icon"></i>
-                            </Button>
-                        </LinkContainer>
-                    </div>
-                </Col>
-                <Col md={6} className="home__bg space-between"></Col>
-                <Col md={6} className="home__bg1 space-between"></Col>
-                <Col md={6} className="d-flex flex-direction-column align-items-center justify-content-center space-between">
-                    <div>
-                        <div>
-                            <h3>Rules to Chit - Chat :</h3>
-                            <p>1. Professional Communication: Maintain a professional tone, avoiding slang, emojis, and abbreviations.</p>
-                            <p>2. Confidentiality: Share sensitive information only in private messages, adhering to company data protection policies.</p>
-                            <p>3. Relevance: Post messages in appropriate channels for relevant discussions.</p>
-                            <p>4. Availability: Accurately set your status to indicate availability.</p>
-                            <p>5. Etiquette: Keep messages concise, avoid spamming, and use @mentions sparingly.</p>
+                        <span className="secure-badge"><i className="fas fa-shield-halved" /> Encrypted with AES-256</span>
+                        <h1 className="hero-title">
+                            Connect with your team, <span>privately.</span>
+                        </h1>
+                        <p className="hero-text">ChatCorp keeps your company's conversations in one place: team channels, direct messages, locked meeting rooms, and file sharing.</p>
+                        <div className="d-flex flex-wrap gap-3">
+                            <Link to={ctaTo} className="btn btn-brand btn-lg">
+                                {user?.token ? "Open chat" : "Log in"} <i className="fas fa-arrow-right ms-1" />
+                            </Link>
+                            {!user?.token && (
+                                <Link to="/signup" className="btn btn-outline-brand btn-lg">Create account</Link>
+                            )}
                         </div>
                     </div>
-                </Col>
-                <Col md={6} className="d-flex flex-direction-column align-items-center justify-content-center space-between">
-                    <div>
-                        <div>
-                            <h3>Meet Toro!</h3>
-                            <p>Toro will help you guiding how to chat in ChatCorp</p>
+
+                    <div className="hero-mock" aria-hidden="true">
+                        <div className="hero-mock__bar"><span /><span /><span /><em># Project-Based Rooms</em></div>
+                        <div className="hero-mock__body">
+                            <div className="bubble bubble--in"><b>Rina</b>Client deck v2 is ready for review 📎</div>
+                            <div className="bubble bubble--out">Nice! Checking it now</div>
+                            <div className="bubble bubble--in"><b>Dimas</b>Let's sync in Room Meeting 1A at 3 🔐</div>
+                            <div className="bubble bubble--out">See you there 👍</div>
                         </div>
+                        <div className="hero-mock__composer">Message #Project-Based Rooms <i className="fas fa-paper-plane" /></div>
                     </div>
-                </Col>
-                <Col md={6} className="home__bg2 space-between"></Col>
-                
-            </Row>
-            <Container fluid className="contact-us-section">
-                <Row>
-                    <Col md={12} className="d-flex flex-direction-column align-items-center justify-content-center">
-                        <div className="contact-form-container">
-                            <h2>Contact Us</h2>
-                            <Form>
-                                <Form.Group controlId="formName">
-                                    <Form.Label>Name</Form.Label>
-                                    <Form.Control type="text" placeholder="Enter your name" />
-                                </Form.Group>
-                                <Form.Group controlId="formEmail">
-                                    <Form.Label>Email address</Form.Label>
-                                    <Form.Control type="email" placeholder="Enter your email" />
-                                </Form.Group>
-                                <Form.Group controlId="formMessage">
-                                    <Form.Label>Message</Form.Label>
-                                    <Form.Control as="textarea" rows={3} placeholder="Enter your message" />
-                                </Form.Group>
-                                <Button variant="info" type="submit">
-                                    Submit
-                                </Button>
-                            </Form>
-                        </div>
-                    </Col>
-                </Row>
-            </Container>
-            <Chatbot /> {/* Tambahkan komponen Chatbot */}
+                </div>
+            </section>
+
+            <section className="section">
+                <div className="container-xl">
+                    <h2 className="section-title">Everything your team needs to talk</h2>
+                    <div className="feature-grid">
+                        {FEATURES.map((f) => (
+                            <article className="feature" key={f.title}>
+                                <span className="feature-icon"><i className={`fas ${f.icon}`} /></span>
+                                <h3>{f.title}</h3>
+                                <p>{f.text}</p>
+                            </article>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            <section className="section section--tint">
+                <div className="container-xl two-col">
+                    <div>
+                        <h2 className="section-title text-start">Rules to chit-chat</h2>
+                        <ol className="rules">
+                            {RULES.map(([t, d]) => (
+                                <li key={t}>
+                                    <strong>{t}</strong>
+                                    <span>{d}</span>
+                                </li>
+                            ))}
+                        </ol>
+                    </div>
+                    <div className="toro-card">
+                        <img src={toro} alt="Toro, the ChatCorp helper bot" />
+                        <h3>Meet Toro!</h3>
+                        <p>Toro answers quick questions about using ChatCorp. Tap the bubble in the corner to say hi.</p>
+                    </div>
+                </div>
+            </section>
+
+            <footer className="site-footer">ChatCorp · Built with React, Node.js, Socket.IO and MongoDB</footer>
+            <Chatbot />
         </>
     );
 }

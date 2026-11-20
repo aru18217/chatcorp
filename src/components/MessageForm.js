@@ -1,270 +1,223 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Button, Col, Form, Row } from "react-bootstrap";
-import { useSelector } from "react-redux";
-import { AppContext } from "../context/appContext";
+import { Form, Button, Spinner } from "react-bootstrap";
+import { AppContext, emitWithAck } from "../context/appContext";
+import { API_URL, documentUrl, displayFileName } from "../config";
+import Avatar from "./Avatar";
 import "./MessageForm.css";
 
-function MessageForm() {
-  const [message, setMessage] = useState("");
-  const [file, setFile] = useState(null);
-  const [roomKey, setRoomKey] = useState("");
-  const [isAuthorized, setIsAuthorized] = useState(true);
-  const user = useSelector((state) => state.user);
-  const { socket, currentRoom, setMessages, messages, privateMemberMsg } =
-    useContext(AppContext);
-  const messageEndRef = useRef(null);
+const MAX_FILE = 10 * 1024 * 1024;
 
-  console.log(user)
+function formattedDate(d = new Date()) {
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${mm}/${dd}/${d.getFullYear()}`;
+}
 
-  // Daftar ruangan yang terkunci dan kunci default
-  const lockedRooms = {
-    'Room Meeting 1A': '12345',
-    'Room Meeting 1B': '12345',
-    'Room Meeting 1C': '12345'
-  };
+function formattedTime(d = new Date()) {
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
-  useEffect(() => {
-    scrollToBottom();
-    if (lockedRooms[currentRoom] && roomKey !== lockedRooms[currentRoom]) {
-      setIsAuthorized(false);
-    } else {
-      setIsAuthorized(true);
-    }
-  }, [messages, currentRoom, roomKey]);
-
-  function getFormattedDate() {
-    const date = new Date();
-    const year = date.getFullYear();
-    let month = (1 + date.getMonth()).toString();
-
-    month = month.length > 1 ? month : "0" + month;
-    let day = date.getDate().toString();
-
-    day = day.length > 1 ? day : "0" + day;
-
-    return month + "/" + day + "/" + year;
-  }
-
-  function handleFileChange(e) {
-    const selectedFile = e.target.files[0];
-    setFile(selectedFile);
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!message && !file) return;
-
+function friendlyDate(mmddyyyy) {
+    const [mm, dd, yyyy] = String(mmddyyyy).split("/").map(Number);
+    if (!yyyy) return mmddyyyy;
+    const d = new Date(yyyy, mm - 1, dd);
     const today = new Date();
-    const minutes = today.getMinutes() < 10 ? "0" + today.getMinutes() : today.getMinutes();
-    const time = today.getHours() + ":" + minutes;
-    const roomId = currentRoom;
-    const todayDate = getFormattedDate();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
 
-    try {
-      if (file) {
-        const formData = new FormData();
-        formData.append('pdf', file);
+function MessageForm({ user, lockedPrompt, joinError, onUnlock, onCancelUnlock, onOpenSidebar }) {
+    const [message, setMessage] = useState("");
+    const [file, setFile] = useState(null);
+    const [roomKey, setRoomKey] = useState("");
+    const [sending, setSending] = useState(false);
+    const [sendError, setSendError] = useState("");
+    const { socket, currentRoom, setMessages, messages, privateMemberMsg } = useContext(AppContext);
+    const messageEndRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const isBlocked = user?.blocked === true;
 
-        const response = await fetch('http://localhost:5001/send', {
-          method: 'POST',
-          body: formData,
-        });
+    useEffect(() => {
+        const onMessages = (roomMessages) => setMessages(roomMessages);
+        socket.on("room-messages", onMessages);
+        return () => socket.off("room-messages", onMessages);
+    }, [socket, setMessages]);
 
-        if (response.ok) {
-          const data = await response.json();
-          socket.emit("message-room", roomId, message, user, time, todayDate, data.filename);
-          setFile(null);
-        } else {
-          console.error("File upload failed");
+    useEffect(() => {
+        messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, [messages]);
+
+    useEffect(() => {
+        setRoomKey("");
+    }, [lockedPrompt]);
+
+    function handleFileChange(e) {
+        const selected = e.target.files[0];
+        e.target.value = "";
+        if (!selected) return;
+        if (selected.size > MAX_FILE) {
+            setSendError("Attachments can be up to 10 MB.");
+            return;
         }
-      } else {
-        const response = await fetch('http://localhost:5001/sendText', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: message }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          socket.emit("message-room", roomId, message, user, time, todayDate);
-        } else {
-          console.error("Message send failed");
-        }
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
+        setSendError("");
+        setFile(selected);
     }
 
-    setMessage("");
-  };
-
-  function scrollToBottom() {
-    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }
-
-  function handleKeySubmit(e) {
-    e.preventDefault();
-    if (roomKey === lockedRooms[currentRoom]) {
-      setIsAuthorized(true);
-    } else {
-      alert("Kunci salah. Akses ditolak.");
+    async function handleSubmit(e) {
+        e.preventDefault();
+        if ((!message.trim() && !file) || sending || !currentRoom) return;
+        setSending(true);
+        setSendError("");
+        try {
+            let filename = null;
+            if (file) {
+                const formData = new FormData();
+                formData.append("pdf", file);
+                const response = await fetch(`${API_URL}/send`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${user.token}` },
+                    body: formData,
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.message || "File upload failed.");
+                filename = data.filename;
+            }
+            const res = await emitWithAck("message-room", currentRoom, message.trim(), formattedTime(), formattedDate(), filename);
+            if (!res.ok) throw new Error(res.error || "Message could not be sent.");
+            setMessage("");
+            setFile(null);
+        } catch (err) {
+            setSendError(err.message);
+        } finally {
+            setSending(false);
+        }
     }
-  }
 
-  socket.off("room-messages").on("room-messages", (roomMessages) => {
-    setMessages(roomMessages);
-  });
+    const roomTitle = privateMemberMsg?._id ? privateMemberMsg.name : currentRoom;
 
-  return (
-    <>
-      {/* Form Penguncian Ruangan */}
-      {lockedRooms[currentRoom] && !isAuthorized && (
-        <Form onSubmit={handleKeySubmit}>
-          <Form.Group>
-            <Form.Label>Masukkan Kunci Ruangan:</Form.Label>
-            <Form.Control
-              type="password"
-              value={roomKey}
-              onChange={(e) => setRoomKey(e.target.value)}
-              placeholder="Masukkan kunci"
-            />
-          </Form.Group>
-          <Button variant="primary" type="submit">
-            Submit
-          </Button>
-        </Form>
-      )}
-
-      {isAuthorized && (
-        <>
-          <div className="messages-output">
-            {user && !privateMemberMsg?._id && (
-              <div className="alert alert-info">
-                You are in the {currentRoom} room
-              </div>
-            )}
-            {user && privateMemberMsg?._id && (
-              <>
-                <div className="alert alert-info conversation-info">
-                  <div>
-                    Your conversation with {privateMemberMsg.name}{" "}
-                    <img
-                      src={`http://localhost:5001/uploads/profiles/${privateMemberMsg.picture}`}
-                      className="conversation-profile-pic"
-                      alt="."
-                    />
-                  </div>
+    return (
+        <section className="chat-main">
+            <header className="chat-header">
+                <button className="icon-btn d-md-none" onClick={onOpenSidebar} aria-label="Open rooms and people">
+                    <i className="fas fa-bars" />
+                </button>
+                {privateMemberMsg?._id ? (
+                    <Avatar user={privateMemberMsg} size={40} status={privateMemberMsg.status} />
+                ) : (
+                    <span className="room-glyph">{lockedPrompt ? <i className="fas fa-lock" /> : "#"}</span>
+                )}
+                <div className="flex-grow-1 min-w-0">
+                    <h2 className="chat-title">{lockedPrompt || roomTitle || "Choose a room"}</h2>
+                    <p className="chat-subtitle">
+                        {privateMemberMsg?._id ? (privateMemberMsg.status === "online" ? "Online" : "Offline") : "Channel"}
+                    </p>
                 </div>
-              </>
-            )}
-            {!user && <div className="alert alert-danger">Please login</div>}
+                <span className="secure-badge" title="Messages are encrypted with AES-256 before they are stored on the server">
+                    <i className="fas fa-shield-halved" /> AES-256
+                </span>
+            </header>
 
-            {user &&
-              messages.map(({ _id: date, messagesByDate }, idx) => (
-                <div key={idx}>
-                  <p className="alert alert-info text-center message-date-indicator">
-                    {date}
-                  </p>
-                  {messagesByDate?.map(
-                    ({ content, time, from: sender, file }, msgIdx) => (
-                      <div
-                        className={
-                          sender?.email === user?.email
-                            ? "message"
-                            : "incoming-message"
-                        }
-                        key={msgIdx}
-                      >
-                        <div className="message-inner">
-                          <div className="d-flex align-items-center mb-3">
-                            <img
-                              src={`http://localhost:5001/uploads/profiles/${sender.picture}`}
-                              style={{
-                                width: 35,
-                                height: 35,
-                                objectFit: "cover",
-                                borderRadius: "50%",
-                                marginRight: 10,
-                              }}
-                              alt="."
+            {lockedPrompt ? (
+                <div className="room-lock">
+                    <div className="room-lock__card">
+                        <div className="room-lock__icon"><i className="fas fa-lock" /></div>
+                        <h3>{lockedPrompt} is locked</h3>
+                        <p className="text-muted">Enter the meeting room key to join.</p>
+                        <Form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                onUnlock(lockedPrompt, roomKey);
+                            }}
+                        >
+                            <Form.Control type="password" placeholder="Room key" value={roomKey} onChange={(e) => setRoomKey(e.target.value)} autoFocus required />
+                            {joinError && <p className="text-danger small mt-2 mb-0">{joinError}</p>}
+                            <div className="d-flex gap-2 mt-3">
+                                <Button variant="light" className="flex-grow-1" onClick={onCancelUnlock}>Cancel</Button>
+                                <Button type="submit" className="btn-brand flex-grow-1">Unlock</Button>
+                            </div>
+                        </Form>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    <div className="messages-output" aria-live="polite">
+                        {joinError && <div className="chat-alert">{joinError}</div>}
+                        {currentRoom && messages.length === 0 && (
+                            <div className="empty-state">
+                                <div className="empty-state__icon">💬</div>
+                                <p className="fw-semibold mb-1">No messages yet</p>
+                                <p className="text-muted small">Say hello to start the conversation.</p>
+                            </div>
+                        )}
+                        {messages.map(({ _id: date, messagesByDate }) => (
+                            <div key={date}>
+                                <div className="date-divider"><span>{friendlyDate(date)}</span></div>
+                                {messagesByDate?.map(({ _id, content, time, from: sender, file: attachment }, idx) => {
+                                    const mine = sender?._id === user?._id;
+                                    const prev = messagesByDate[idx - 1];
+                                    const grouped = prev && prev.from?._id === sender?._id;
+                                    return (
+                                        <div className={`msg ${mine ? "msg--mine" : "msg--theirs"} ${grouped ? "msg--grouped" : ""}`} key={_id || idx}>
+                                            {!mine && <div className="msg-avatar">{!grouped && <Avatar user={sender} size={32} />}</div>}
+                                            <div className="msg-body">
+                                                {!mine && !grouped && <div className="msg-sender">{sender?.name}</div>}
+                                                <div className="msg-bubble">
+                                                    {content && <p className="msg-text">{content}</p>}
+                                                    {attachment && (
+                                                        <a className="msg-file" href={documentUrl(attachment)} target="_blank" rel="noopener noreferrer">
+                                                            <i className="fas fa-file-lines" />
+                                                            <span>{displayFileName(attachment)}</span>
+                                                        </a>
+                                                    )}
+                                                    <span className="msg-time">{time}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ))}
+                        <div ref={messageEndRef} />
+                    </div>
+
+                    <footer className="composer-wrap">
+                        {isBlocked && <div className="chat-alert mb-2">Your account is blocked by an admin. You can read messages but cannot send new ones.</div>}
+                        {sendError && <div className="chat-alert mb-2">{sendError}</div>}
+                        {file && (
+                            <div className="file-chip">
+                                <i className="fas fa-paperclip" /> {file.name}
+                                <button type="button" onClick={() => setFile(null)} aria-label="Remove attachment">
+                                    <i className="fas fa-xmark" />
+                                </button>
+                            </div>
+                        )}
+                        <Form onSubmit={handleSubmit} className="composer">
+                            <input ref={fileInputRef} type="file" hidden onChange={handleFileChange} disabled={isBlocked} />
+                            <button type="button" className="icon-btn" onClick={() => fileInputRef.current?.click()} disabled={isBlocked || !currentRoom} aria-label="Attach a file">
+                                <i className="fas fa-paperclip" />
+                            </button>
+                            <input
+                                className="composer-input"
+                                type="text"
+                                placeholder={currentRoom ? `Message ${privateMemberMsg?._id ? privateMemberMsg.name : "#" + currentRoom}` : "Choose a room to start"}
+                                disabled={isBlocked || !currentRoom}
+                                value={message}
+                                maxLength={5000}
+                                onChange={(e) => setMessage(e.target.value)}
+                                aria-label="Message"
                             />
-                            <p className="message-sender">
-                              {sender._id === user?._id ? "You" : sender.name}
-                            </p>
-                          </div>
-                          <p className="message-content">{content}</p>
-                          {file && (
-                            <a
-                              href={`http://localhost:5001/uploads/documents/${encodeURIComponent(file)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <i className="fas fa-file-pdf"></i> {file}
-                            </a>
-                          )}
-                          <p className="message-timestamp-left">{time}</p>
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-              ))}
-            <div ref={messageEndRef} />
-          </div>
-          {file && (
-            <div className="file-preview">
-              <strong>File Selected:</strong> {file.name}
-            </div>
-          )}
-          <Form onSubmit={handleSubmit}>
-            <Row>
-              <Col md={1}>
-                <Form.Group>
-                  <Form.Control
-                    type="file"
-                    id="fileUpload"
-                    name="pdf"
-                    onChange={handleFileChange}
-                    style={{ display: 'none' }}
-                    disabled={!user || user.blocked === true}
-                  />
-                  <Button
-                    variant="outline-primary"
-                    onClick={() => document.getElementById('fileUpload').click()}
-                    disabled={!user || user.blocked === true}
-                  >
-                    <i className="fas fa-paperclip"></i>
-                  </Button>
-                </Form.Group>
-              </Col>
-              <Col md={10}>
-                <Form.Group>
-                  <Form.Control
-                    type="text"
-                    placeholder="Your message"
-                    disabled={!user || user.blocked === true}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={1}>
-                <Button
-                  variant="primary"
-                  type="submit"
-                  style={{ width: "100%", backgroundColor: "orange" }}
-                  disabled={!user || user.blocked === true}
-                >
-                  <i className="fas fa-paper-plane"></i>
-                </Button>
-              </Col>
-            </Row>
-          </Form>
-        </>
-      )}
-    </>
-  );
+                            <button type="submit" className="send-btn" disabled={isBlocked || sending || (!message.trim() && !file)} aria-label="Send">
+                                {sending ? <Spinner animation="border" size="sm" /> : <i className="fas fa-paper-plane" />}
+                            </button>
+                        </Form>
+                    </footer>
+                </>
+            )}
+        </section>
+    );
 }
 
 export default MessageForm;

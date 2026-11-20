@@ -1,56 +1,64 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useCheckOTPMutation } from "../services/appApi";
-import "bootstrap/dist/css/bootstrap.min.css";
+import { Form, Button, Spinner, Alert } from "react-bootstrap";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useCheckOTPMutation, useResendOTPMutation } from "../services/appApi";
+import AuthLayout from "../components/AuthLayout";
 
 function Auth() {
-    const [otp, setOtp] = useState("");
+    const location = useLocation();
     const navigate = useNavigate();
+    const email = location.state?.email;
+    const [otp, setOtp] = useState("");
+    const [message, setMessage] = useState("");
     const [checkOTP, { isLoading, error }] = useCheckOTPMutation();
+    const [resendOTP, { isLoading: resending }] = useResendOTPMutation();
 
-    function handleOtpSubmit(e) {
+    if (!email) return <Navigate to="/login" replace />;
+
+    async function handleOtpSubmit(e) {
         e.preventDefault();
-        checkOTP({ otp }).then(({ data }) => {
-            if (data?.success) {
-                navigate("/chat");
-            } else {
-                alert("Invalid OTP. Please try again.");
-            }
-        }).catch(err => {
-            console.error("Error validating OTP:", err);
-            alert("There was an error validating the OTP. Please try again.");
-        });
+        const { data } = await checkOTP({ email, otp: otp.trim() });
+        if (data?.success) {
+            navigate("/login", { replace: true, state: { notice: "Account verified! Please log in." } });
+        }
+    }
+
+    async function handleResend() {
+        await resendOTP({ email });
+        setMessage("A new code has been sent to your email.");
     }
 
     return (
-        <div className="d-flex justify-content-center align-items-center vh-100">
-            <div className="card p-4 shadow" style={{ maxWidth: "400px", width: "100%" }}>
-                <div className="card-body">
-                    <h5 className="card-title text-center">Verifikasi OTP</h5>
-                    <p className="card-text text-center">
-                        Silahkan cek email dan masukkan kode OTP untuk aktivasi akun yang telah dikirimkan ke email kamu.
-                    </p>
-                    <form onSubmit={handleOtpSubmit}>
-                        <div className="mb-3">
-                            <input
-                                type="text"
-                                className="form-control"
-                                placeholder="Masukkan Kode OTP"
-                                value={otp}
-                                onChange={(e) => setOtp(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="d-grid">
-                            <button type="submit" className="btn btn-primary" disabled={isLoading}>
-                                {isLoading ? "Loading..." : "Submit"}
-                            </button>
-                        </div>
-                    </form>
-                    {error && <div className="alert alert-danger mt-3">Error: {error.message}</div>}
-                </div>
-            </div>
-        </div>
+        <AuthLayout title="Check your email 📬" subtitle={`We sent a 6-digit code to ${email}. It expires in 10 minutes.`}>
+            {error && <Alert variant="danger">{error.data?.message || "Invalid or expired code."}</Alert>}
+            {message && <Alert variant="info">{message}</Alert>}
+            <Form onSubmit={handleOtpSubmit}>
+                <Form.Group className="mb-4" controlId="otp">
+                    <Form.Label>Verification code</Form.Label>
+                    <Form.Control
+                        className="otp-input"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        pattern="\d{6}"
+                        placeholder="••••••"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                        required
+                    />
+                </Form.Group>
+                <Button type="submit" className="btn-brand w-100" disabled={isLoading || otp.length !== 6}>
+                    {isLoading ? <Spinner animation="border" size="sm" /> : "Verify account"}
+                </Button>
+            </Form>
+            <p className="text-center mt-4 mb-0 text-muted">
+                Didn't get it?{" "}
+                <Button variant="link" className="p-0 align-baseline" onClick={handleResend} disabled={resending}>
+                    Resend code
+                </Button>{" "}
+                · <Link to="/login">Back to login</Link>
+            </p>
+        </AuthLayout>
     );
 }
 

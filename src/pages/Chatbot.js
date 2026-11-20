@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './Chatbot.css';
-import closeIcon from '../assets/close.png';
+import toroImg from '../assets/toro.png';
 
 function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
@@ -176,7 +176,7 @@ function Chatbot() {
     {
         "response_type": "security_info",
         "user_input": ["apakah data saya aman di server?", "bagaimana chatcorp melindungi data?", "keamanan data di server"],
-        "bot_response": "Data Anda disimpan di server dengan keamanan tingkat tinggi dan dilindungi oleh enkripsi untuk mencegah akses yang tidak sah.",
+        "bot_response": "Isi pesan disimpan terenkripsi AES-256 dan kata sandi disimpan dalam bentuk hash bcrypt, sehingga tidak tersimpan sebagai teks biasa.",
         "required_words": ["data", "server"]
     },
     {
@@ -188,13 +188,13 @@ function Chatbot() {
     {
       "response_type": "security_info",
       "user_input": ["bagaimana chatcorp melindungi privasi?", "privasi di chatcorp", "data pribadi di chatcorp"],
-      "bot_response": "Privasi Anda adalah prioritas kami. ChatCorp mengenkripsi semua data pesan dan memastikan tidak ada yang bisa mengakses kecuali Anda dan penerima.",
+      "bot_response": "Privasi Anda adalah prioritas kami. Isi pesan dan nama file dienkripsi dengan AES-256 sebelum disimpan di server, dan hanya anggota ruangan yang bisa membuka percakapannya.",
       "required_words": ["privasi", "data pribadi"]
     },
     {
       "response_type": "security_info",
       "user_input": ["apakah pesan bisa diakses pihak ketiga?", "apakah chatcorp aman dari peretasan?", "apakah data saya aman?"],
-      "bot_response": "Dengan enkripsi end-to-end dan kebijakan keamanan ketat, ChatCorp memastikan tidak ada pihak ketiga yang dapat mengakses pesan Anda.",
+      "bot_response": "Pesan disimpan dalam bentuk terenkripsi AES-256, jadi orang yang hanya melihat isi database tidak bisa membacanya. Ruang meeting juga dikunci dengan kunci khusus.",
       "required_words": ["pihak ketiga", "keamanan"]
     },
     {
@@ -206,19 +206,19 @@ function Chatbot() {
     {
       "response_type": "security_info",
       "user_input": ["bagaimana cara mencegah peretasan?", "tips keamanan akun", "menghindari peretasan"],
-      "bot_response": "Selalu gunakan autentikasi dua faktor dan perbarui kata sandi secara rutin untuk mencegah peretasan akun di ChatCorp.",
+      "bot_response": "Gunakan kata sandi yang kuat, jangan bagikan kode OTP ke siapa pun, dan perbarui kata sandi secara rutin untuk mencegah peretasan akun.",
       "required_words": ["peretasan", "akun"]
     },
     {
       "response_type": "security_info",
       "user_input": ["siapa yang bisa melihat pesan saya?", "apakah pesan saya pribadi?", "privasi pesan di chatcorp"],
-      "bot_response": "Hanya Anda dan penerima yang bisa melihat pesan Anda. Enkripsi end-to-end ChatCorp memastikan pesan Anda tetap pribadi.",
+      "bot_response": "Pesan pribadi hanya bisa dibuka oleh Anda dan lawan bicara Anda, dan isinya disimpan terenkripsi AES-256 di server.",
       "required_words": ["pesan", "privasi"]
     },
     {
       "response_type": "security_info",
       "user_input": ["apakah ada audit keamanan?", "audit keamanan chatcorp", "chatcorp diaudit?"],
-      "bot_response": "Ya, ChatCorp menjalani audit keamanan rutin untuk memastikan semua protokol keamanan berfungsi dengan baik dan sesuai standar industri.",
+      "bot_response": "ChatCorp adalah proyek portofolio, jadi belum melalui audit keamanan resmi. Fitur keamanannya meliputi enkripsi AES-256, verifikasi OTP, dan ruang meeting terkunci.",
       "required_words": ["audit", "keamanan"]
     }
     ];
@@ -232,41 +232,51 @@ function Chatbot() {
       }
     }
 
-    // Tidak ada respons jika tidak ada kecocokan
-    return null;
+    return "Maaf, Toro belum paham pertanyaan itu 🙏 Coba tanya soal \"cara menggunakan\", \"aturan\", \"upload file\", atau \"keamanan\".";
   };
 
   return (
-    <div>
-      <div className="chat-icon-container">
-        <button className="chat-icon" onClick={toggleChat}>💬</button>
-      </div>
-
+    <div className="toro">
       {isOpen && (
-        <div className="chat-container">
-          <div className="chat-header">
-          <img src={closeIcon} alt="close" className="close-icon" onClick={toggleChat} />
-            <h1>Toro!</h1>
+        <div className="toro-panel" role="dialog" aria-label="Toro help bot">
+          <div className="toro-head">
+            <img src={toroImg} alt="" className="toro-avatar" />
+            <div className="flex-grow-1">
+              <strong>Toro</strong>
+              <small>ChatCorp helper bot</small>
+            </div>
+            <button className="toro-close" onClick={toggleChat} aria-label="Close Toro">
+              <i className="fas fa-xmark" />
+            </button>
           </div>
-          <div className="chat-messages">
+          <div className="toro-messages">
+            {messages.length === 0 && (
+              <div className="toro-bot">Halo! Aku Toro 👋 Coba tanya "cara menggunakan", "aturan", atau "apakah aman".</div>
+            )}
             {messages.map((msg, index) => (
-              <div key={index} className={msg.sender === 'user' ? 'user-message' : 'bot-message'}>
+              <div key={index} className={msg.sender === 'user' ? 'toro-user' : 'toro-bot'}>
                 {msg.text}
               </div>
             ))}
           </div>
-          <div className="input-container">
-            <input 
-              type="text" 
-              value={userMessage} 
-              onChange={handleInputChange} 
-              onKeyPress={handleKeyPress}
-              placeholder="Type your message..." 
+          <div className="toro-input">
+            <input
+              type="text"
+              value={userMessage}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyPress}
+              placeholder="Tanya Toro..."
+              aria-label="Message Toro"
             />
-            <button onClick={sendMessage}>Send</button>
+            <button onClick={sendMessage} aria-label="Send">
+              <i className="fas fa-paper-plane" />
+            </button>
           </div>
         </div>
       )}
+      <button className="toro-fab" onClick={toggleChat} aria-label={isOpen ? "Close Toro" : "Open Toro help bot"}>
+        {isOpen ? <i className="fas fa-xmark" /> : <img src={toroImg} alt="" />}
+      </button>
     </div>
   );
 }

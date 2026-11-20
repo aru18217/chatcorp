@@ -1,241 +1,209 @@
+require('dotenv').config({ quiet: true });
 const express = require('express');
-const app = express();
-const mongoose = require('mongoose');
-const multer = require('multer');
-const path = require('path'); 
-const userRoutes = require('./routes/userRoutes');
-const User = require('./models/User');
-const Message = require('./models/Message');
-const cors = require('cors');
+const fs = require('fs');
 const crypto = require('crypto');
+const multer = require('multer');
+const path = require('path');
+const cors = require('cors');
+const userRoutes = require('./routes/userRoutes');
+const Message = require('./models/Message');
+const User = require('./models/User');
+const { encrypt, safeDecrypt } = require('./lib/crypto');
+const { userFromToken, requireAuth } = require('./lib/auth');
+const { publicUser, getMembers } = require('./lib/members');
+const { ROOMS, isLockedRoom, checkRoomPassword, canAccessPrivateRoom } = require('./lib/rooms');
 
-const rooms = [
-  'General Announcement', 
-  'Department Channels', 
-  'Project-Based Rooms', 
-  'Team Rooms', 
-  'Casual Chat', 
-  'Support Channels', 
-  'Event Planning', 
-  'Training and Resources', 
-  'Feedback and Suggestions', 
-  'Client Communication', 
-  'Room Meeting 1A', 
-  'Room Meeting 1B', 
-  'Room Meeting 1C'
-];
-
-const lockedRooms = {
-  'Room Meeting 1A': '12345',
-  'Room Meeting 1B': '12345',
-  'Room Meeting 1C': '12345'
-};
-
-
-
-const algorithm = 'aes-256-cbc'; //AES-256
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, path.join(__dirname, 'uploads/documents'));
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
+// Fail fast if required secrets are missing.
+for (const name of ['MONGODB_URI', 'ENCRYPTION_KEY', 'JWT_SECRET']) {
+  if (!process.env[name]) {
+    console.error(`${name} is not set. Copy .env.example to .env and fill it in.`);
+    process.exit(1);
   }
-});
-const upload = multer({ storage });
+}
+if (!/^[0-9a-fA-F]{64}$/.test(process.env.ENCRYPTION_KEY)) {
+  console.error('ENCRYPTION_KEY must be 64 hex characters (32 bytes).');
+  process.exit(1);
+}
 
+const PORT = process.env.PORT || 5001;
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+const DOCS_DIR = path.join(__dirname, 'uploads', 'documents');
+fs.mkdirSync(DOCS_DIR, { recursive: true });
+
+const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(cors());
-
+app.use(cors({ origin: CLIENT_URL }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/users', userRoutes);
 require('./connection');
 
 const server = require('http').createServer(app);
-const PORT = 5001;
 const io = require('socket.io')(server, {
-  cors: {
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST']
-  }
+  cors: { origin: CLIENT_URL, methods: ['GET', 'POST'] },
+});
+app.set('io', io);
+
+// ---------- File upload (attachments) ----------
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, DOCS_DIR),
+    // Random prefix so file URLs cannot be guessed.
+    filename: (req, file, cb) =>
+      cb(null, `${crypto.randomBytes(12).toString('hex')}-${path.basename(file.originalname).replace(/[^\w.\- ]/g, '_')}`),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
 });
 
-function encrypt(text) {
-  const iv = crypto.randomBytes(16);
-  const key = crypto.randomBytes(32);
-  const cipher = crypto.createCipheriv(algorithm, key, iv);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return { iv: iv.toString('hex'), encryptedData: encrypted, key: key.toString('hex') };
-}
-
-function decrypt(encryptedData, iv, key) {
-  const decipher = crypto.createDecipheriv(algorithm, Buffer.from(key, 'hex'), Buffer.from(iv, 'hex'));
-  let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
-
-function isRoomAuthorized(room, password) {
-  const roomPassword = lockedRooms[room];
-  return roomPassword && roomPassword === password;
-}
-
-async function getLastMessagesFromRoom(room) {
-  try {
-    let roomMessages = await Message.aggregate([
-      { $match: { to: room } },
-      { $group: { _id: '$date', messagesByDate: { $push: '$$ROOT' } } }
-    ]);
-
-    roomMessages = roomMessages.map(dateGroup => {
-      const decryptedMessagesByDate = dateGroup.messagesByDate.map(message => {
-        let decryptedMessage = message.content;
-        if (message.content && message.iv && message.key) {
-          try {
-            decryptedMessage = decrypt(message.content, message.iv, message.key);
-          } catch (e) {
-            console.error('Error decrypting text:', e);
-          }
-        }
-        return { ...message, content: decryptedMessage };
-      });
-      return { _id: dateGroup._id, messagesByDate: decryptedMessagesByDate };
-    });
-
-    return roomMessages;
-  } catch (error) {
-    console.error('Error getting last messages from room:', error);
-    throw error;
-  }
-}
-
-function sortRoomMessagesByDate(messages) {
-  return messages.sort(function (a, b) {
-    let date1 = a._id.split('/');
-    let date2 = b._id.split('/');
-
-    date1 = date1[2] + date1[0] + date1[1];
-    date2 = date2[2] + date2[0] + date2[1];
-
-    return date1 < date2 ? -1 : 1;
+app.post('/send', requireAuth, (req, res) => {
+  if (req.user.blocked) return res.status(403).json({ message: 'Your account is blocked' });
+  upload.single('pdf')(req, res, (err) => {
+    if (err) return res.status(400).json({ message: err.message });
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded.' });
+    res.status(200).json({ filename: req.file.filename });
   });
-}
-
-io.on('connection', (socket) => {
-  socket.on('new-user', async () => {
-    const members = await User.find();
-    io.emit('new-user', members);
-  });
-
-  socket.on('join-room', async (newRoom, previousRoom, password) => {
-    if (lockedRooms[newRoom] && !isRoomAuthorized(newRoom, password)) {
-      socket.emit('unauthorized', 'Password salah atau Anda tidak memiliki akses ke ruangan ini.');
-      return;
-    }
-
-    socket.join(newRoom);
-    socket.leave(previousRoom);
-    let roomMessages = await getLastMessagesFromRoom(newRoom);
-    roomMessages = sortRoomMessagesByDate(roomMessages);
-    socket.emit('room-messages', roomMessages);
-  });
-
-  socket.on('message-room', async (room, content, sender, time, date, filename, iv, key) => {
-    const encryptionTimeStart = process.hrtime();
-
-    const { iv: contentIv, encryptedData: encryptedContent, key: contentKey } = encrypt(content);
-    const newMessage = await Message.create({
-      content: encryptedContent,
-      iv: contentIv,
-      key: contentKey,
-      from: sender,
-      time,
-      date,
-      to: room,
-      file: filename,
-      iv_file: iv,
-      key_file: key,
-    });
-
-    const encryptionTimeEnd = process.hrtime(encryptionTimeStart);
-    const encryptionDuration = encryptionTimeEnd[0] * 1e9 + encryptionTimeEnd[1];
-    newMessage.encryptionDuration = encryptionDuration;
-
-    await newMessage.save();
-
-    let roomMessages = await getLastMessagesFromRoom(room);
-    roomMessages = sortRoomMessagesByDate(roomMessages);
-
-    roomMessages = roomMessages.map((message) => {
-      if (message.file) {
-        const decryptedFilename = decrypt({
-          encryptedData: message.file,
-          iv: message.iv_file,
-          key: message.key_file,
-        });
-        message.file = decryptedFilename;
-      }
-      return message;
-    });
-
-    io.to(room).emit('room-messages', roomMessages);
-  });
-
-  app.post('/send', upload.single('pdf'), (req, res) => {
-    if (!req.file) {
-      return res.status(400).send('No file uploaded.');
-    }
-
-    const { iv, encryptedData, key } = encrypt(req.file.filename);
-
-    res.status(200).json({
-      filename: req.file.filename,
-      encryptedFilename: encryptedData,
-      iv,
-      key
-    });
-  });
-
-  app.post('/sendText', (req, res) => {
-    const { content } = req.body;
-
-    if (!content) {
-      return res.status(400).send('No content provided.');
-    }
-
-    const { iv, encryptedData, key } = encrypt(content);
-
-    res.status(200).json({
-      originalContent: content,
-      encryptedContent: encryptedData,
-      iv,
-      key
-    });
-  });
-
-  app.delete('/logout', async (req, res) => {
-    try {
-      const { _id, newMessages } = req.body;
-      const user = await User.findById(_id);
-      user.status = "offline";
-      user.newMessages = newMessages;
-      await user.save();
-      const members = await User.find();
-      socket.broadcast.emit('new-user', members);
-      res.status(200).send();
-    } catch (e) {
-      console.log(e);
-      res.status(400).send();
-    }
-  });
-
 });
 
 app.get('/rooms', (req, res) => {
-  res.json(rooms);
+  res.json(ROOMS.map((name) => ({ name, locked: isLockedRoom(name) })));
+});
+
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+// ---------- Messages ----------
+function decryptMessage(m) {
+  const content = safeDecrypt(m.content, m.iv, m.key);
+  const file = m.file ? safeDecrypt(m.file, m.iv_file, m.key_file) : null;
+  return {
+    _id: String(m._id),
+    content: content === null ? '[message could not be decrypted]' : content,
+    file,
+    from: publicUser(m.from),
+    time: m.time,
+    date: m.date,
+    to: m.to,
+  };
+}
+
+function dateKey(d) {
+  // dates are stored as MM/DD/YYYY
+  const [mm, dd, yyyy] = String(d).split('/');
+  return `${yyyy}${mm}${dd}`;
+}
+
+async function getRoomMessages(room) {
+  const docs = await Message.find({ to: room }).sort({ _id: 1 }).limit(1000).lean();
+  const groups = new Map();
+  for (const doc of docs) {
+    if (!groups.has(doc.date)) groups.set(doc.date, []);
+    groups.get(doc.date).push(decryptMessage(doc));
+  }
+  return [...groups.entries()]
+    .map(([date, messagesByDate]) => ({ _id: date, messagesByDate }))
+    .sort((a, b) => (dateKey(a._id) < dateKey(b._id) ? -1 : 1));
+}
+
+// ---------- Socket.io ----------
+io.use(async (socket, next) => {
+  const user = await userFromToken(socket.handshake.auth?.token);
+  if (!user || !user.isVerified()) return next(new Error('unauthorized'));
+  socket.data.userId = String(user._id);
+  next();
+});
+
+io.on('connection', (socket) => {
+  const currentUser = () => User.findById(socket.data.userId);
+
+  socket.on('new-user', async () => {
+    io.emit('new-user', await getMembers());
+  });
+
+  socket.on('join-room', async (newRoom, previousRoom, password, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => {};
+    try {
+      const isPublic = ROOMS.includes(newRoom);
+      if (!isPublic && !canAccessPrivateRoom(newRoom, socket.data.userId)) {
+        return reply({ ok: false, error: 'You do not have access to this conversation.' });
+      }
+      if (isLockedRoom(newRoom) && !checkRoomPassword(newRoom, password)) {
+        return reply({ ok: false, locked: true, error: 'Wrong room key. Access denied.' });
+      }
+      if (previousRoom && previousRoom !== newRoom) socket.leave(previousRoom);
+      socket.join(newRoom);
+      // Send the history in the acknowledgement so it can't race with the reply.
+      reply({ ok: true, messages: await getRoomMessages(newRoom) });
+    } catch (e) {
+      console.error('join-room failed:', e);
+      reply({ ok: false, error: 'Could not join the room.' });
+    }
+  });
+
+  socket.on('message-room', async (room, content, time, date, filename, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => {};
+    try {
+      const user = await currentUser();
+      if (!user) return reply({ ok: false, error: 'Please login again.' });
+      if (user.blocked) return reply({ ok: false, error: 'Your account is blocked.' });
+      if (!socket.rooms.has(room)) return reply({ ok: false, error: 'Join the room first.' });
+
+      const text = String(content || '').trim().slice(0, 5000);
+      let safeFile = null;
+      if (filename) {
+        safeFile = path.basename(String(filename));
+        if (!fs.existsSync(path.join(DOCS_DIR, safeFile))) safeFile = null;
+      }
+      if (!text && !safeFile) return reply({ ok: false, error: 'Empty message.' });
+
+      const start = process.hrtime.bigint();
+      const enc = encrypt(text);
+      const encFile = safeFile ? encrypt(safeFile) : null;
+      const encryptionDuration = Number(process.hrtime.bigint() - start);
+
+      await Message.create({
+        content: enc.encryptedData,
+        iv: enc.iv,
+        file: encFile ? encFile.encryptedData : undefined,
+        iv_file: encFile ? encFile.iv : undefined,
+        from: publicUser(user),
+        time,
+        date,
+        to: room,
+        encryptionDuration,
+      });
+
+      io.to(room).emit('room-messages', await getRoomMessages(room));
+      socket.broadcast.emit('notifications', room);
+      reply({ ok: true });
+    } catch (e) {
+      console.error('message-room failed:', e);
+      reply({ ok: false, error: 'Message could not be sent.' });
+    }
+  });
+
+  // Mark the user offline when their last open tab disconnects.
+  socket.on('disconnect', async () => {
+    try {
+      const stillConnected = [...io.sockets.sockets.values()].some(
+        (s) => s.id !== socket.id && s.data.userId === socket.data.userId
+      );
+      if (!stillConnected) {
+        await User.updateOne({ _id: socket.data.userId }, { status: 'offline' });
+        io.emit('new-user', await getMembers());
+      }
+    } catch (e) {
+      console.error('disconnect cleanup failed:', e.message);
+    }
+  });
+});
+
+// Mark the user online when they connect.
+io.on('connection', async (socket) => {
+  try {
+    await User.updateOne({ _id: socket.data.userId }, { status: 'online' });
+    io.emit('new-user', await getMembers());
+  } catch (e) {
+    console.error('connect status update failed:', e.message);
+  }
 });
 
 server.listen(PORT, () => {

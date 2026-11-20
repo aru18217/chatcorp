@@ -6,26 +6,26 @@ export const userSlice = createSlice({
     initialState: null,
     reducers: {
         addNotifications: (state, { payload }) => {
-            if (state.newMessages[payload]) {
-                state.newMessages[payload] = state.newMessages[payload] + 1;
-            } else {
-                state.newMessages[payload] = 1;
-            }
+            if (!state) return;
+            state.newMessages = state.newMessages || {};
+            state.newMessages[payload] = (state.newMessages[payload] || 0) + 1;
         },
         resetNotifications: (state, { payload }) => {
-            delete state.newMessages[payload];
+            if (state?.newMessages) delete state.newMessages[payload];
         },
+        // Clears the session locally (e.g. expired token).
+        clearSession: () => null,
     },
 
     extraReducers: (builder) => {
-        // save user after signup
-        builder.addMatcher(appApi.endpoints.signupUser.matchFulfilled, (state, { payload }) => payload);
-        // save user after login
-        builder.addMatcher(appApi.endpoints.loginUser.matchFulfilled, (state, { payload }) => payload);
-        // logout: destroy user session
+        // Only a verified login (one that returns a token) creates a session.
+        builder.addMatcher(appApi.endpoints.loginUser.matchFulfilled, (state, { payload }) =>
+            payload?.token ? { newMessages: {}, ...payload } : state
+        );
         builder.addMatcher(appApi.endpoints.logoutUser.matchFulfilled, () => null);
+        builder.addMatcher(appApi.endpoints.logoutUser.matchRejected, () => null);
     },
 });
 
-export const { addNotifications, resetNotifications } = userSlice.actions;
+export const { addNotifications, resetNotifications, clearSession } = userSlice.actions;
 export default userSlice.reducer;

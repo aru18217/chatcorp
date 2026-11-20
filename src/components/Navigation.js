@@ -1,68 +1,77 @@
 import React from "react";
-import { Nav, Navbar, Container, Button, NavDropdown, Col, Form } from "react-bootstrap";
-import { useLogoutUserMutation } from "../services/appApi";
+import { Nav, Navbar, Container, NavDropdown } from "react-bootstrap";
 import { useSelector } from "react-redux";
 import { LinkContainer } from "react-router-bootstrap";
+import { useLocation } from "react-router-dom";
+import { useLogoutUserMutation } from "../services/appApi";
+import Avatar from "./Avatar";
 import logo from "../assets/logo-f.png";
 
 function Navigation() {
     const user = useSelector((state) => state.user);
     const [logoutUser] = useLogoutUserMutation();
-    console.log(user)
+    const { pathname } = useLocation();
 
     async function handleLogout(e) {
         e.preventDefault();
-        await logoutUser(user);
-        // redirect to home page
+        await logoutUser({ newMessages: user?.newMessages || {} });
         window.location.replace("/");
     }
 
     return (
-        <Navbar bg="light" expand="lg">
-            <Container>
+        <Navbar expand="lg" className={`app-nav ${pathname === "/chat" ? "app-nav--compact" : ""}`}>
+            <Container fluid="xl">
                 <LinkContainer to="/">
-                    <Navbar.Brand>
-                        <img src={logo} style={{ width: 50, height: 50 }} alt="Logo" />
+                    <Navbar.Brand className="brand">
+                        <img src={logo} alt="" />
+                        <span>ChatCorp</span>
                     </Navbar.Brand>
                 </LinkContainer>
-                <Navbar.Toggle aria-controls="basic-navbar-nav" />
-                <Navbar.Collapse id="basic-navbar-nav">
-                    <Nav className="ms-auto">
+                <Navbar.Toggle aria-controls="main-nav" />
+                <Navbar.Collapse id="main-nav">
+                    <Nav className="ms-auto align-items-lg-center gap-lg-1">
+                        {user?.token && (
+                            <LinkContainer to="/chat">
+                                <Nav.Link>Chat</Nav.Link>
+                            </LinkContainer>
+                        )}
                         {user?.role === "admin" && (
                             <>
                                 <LinkContainer to="/history">
                                     <Nav.Link>History</Nav.Link>
                                 </LinkContainer>
                                 <LinkContainer to="/admin">
-                                    <Nav.Link>List User</Nav.Link>
+                                    <Nav.Link>Users</Nav.Link>
                                 </LinkContainer>
                             </>
                         )}
-                        {!user && (
-                            <LinkContainer to="/login">
-                                <Nav.Link>Login</Nav.Link>
-                            </LinkContainer>
+                        {!user?.token && (
+                            <>
+                                <LinkContainer to="/login">
+                                    <Nav.Link>Login</Nav.Link>
+                                </LinkContainer>
+                                <LinkContainer to="/signup">
+                                    <Nav.Link className="btn-pill">Get started</Nav.Link>
+                                </LinkContainer>
+                            </>
                         )}
-                        <LinkContainer to="/chat">
-                            <Nav.Link>Chat</Nav.Link>
-                        </LinkContainer>
-                        {user && (
+                        {user?.token && (
                             <NavDropdown
+                                align="end"
+                                id="user-menu"
                                 title={
-                                    <>
-                                        <img src={`http://localhost:5001/uploads/profiles/${user.picture}`} style={{ width: 30, height: 30, marginRight: 10, objectFit: "cover", borderRadius: "50%" }} alt="Profile" />
-                                        {user.name}
-                                    </>
+                                    <span className="d-inline-flex align-items-center gap-2">
+                                        <Avatar user={user} size={30} />
+                                        <span className="fw-semibold">{user.name}</span>
+                                    </span>
                                 }
-                                id="basic-nav-dropdown"
                             >
                                 <LinkContainer to="/profile">
                                     <NavDropdown.Item>Profile</NavDropdown.Item>
                                 </LinkContainer>
-                                <NavDropdown.Item>
-                                    <Button variant="danger" onClick={handleLogout}>
-                                        Logout
-                                    </Button>
+                                <NavDropdown.Divider />
+                                <NavDropdown.Item onClick={handleLogout} className="text-danger">
+                                    Logout
                                 </NavDropdown.Item>
                             </NavDropdown>
                         )}

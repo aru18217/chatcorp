@@ -1,128 +1,100 @@
-import React, { useContext, useEffect, useState } from "react";
-import { Col, ListGroup, Row } from "react-bootstrap";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppContext } from "../context/appContext";
-import { addNotifications, resetNotifications } from "../features/userSlice";
-import CaptchaVerification from "./Captcha"; 
+import { addNotifications } from "../features/userSlice";
+import Avatar from "./Avatar";
 import "./Sidebar.css";
 
-function Sidebar() {
+function Sidebar({ joinRoom, privateRoomId, onClose }) {
     const user = useSelector((state) => state.user);
     const dispatch = useDispatch();
-    const { socket, setMembers, members = [], setCurrentRoom, setRooms, privateMemberMsg, rooms = [], setPrivateMemberMsg, currentRoom } = useContext(AppContext);
-    const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
-
-    function joinRoom(room, isPublic = true) {
-        if (!user) {
-            return alert("Please login");
-        }
-        if (!isCaptchaVerified) {
-            return alert("Please complete the CAPTCHA verification.");
-        }
-        socket.emit("join-room", room, currentRoom);
-        setCurrentRoom(room);
-
-        if (isPublic) {
-            setPrivateMemberMsg(null);
-        }
-        // Dispatch for notifications
-        dispatch(resetNotifications(room));
-    }
-
-    socket.off("notifications").on("notifications", (room) => {
-        if (currentRoom !== room) dispatch(addNotifications(room));
-    });
+    const { socket, setMembers, members = [], rooms = [], privateMemberMsg, currentRoom } = useContext(AppContext);
+    const [query, setQuery] = useState("");
 
     useEffect(() => {
-        if (user && isCaptchaVerified) {
-            setCurrentRoom("general");
-            getRooms();
-            socket.emit("join-room", "general");
-            socket.emit("new-user");
-        }
-    }, [user, isCaptchaVerified]);
+        const onMembers = (payload) => setMembers(payload);
+        const onNotify = (room) => {
+            if (room !== currentRoom) dispatch(addNotifications(room));
+        };
+        socket.on("new-user", onMembers);
+        socket.on("notifications", onNotify);
+        return () => {
+            socket.off("new-user", onMembers);
+            socket.off("notifications", onNotify);
+        };
+    }, [socket, setMembers, dispatch, currentRoom]);
 
-    socket.off("new-user").on("new-user", (payload) => {
-        setMembers(payload);
-    });
-
-    function getRooms() {
-        fetch("http://localhost:5001/rooms")
-            .then((res) => res.json())
-            .then((data) => setRooms(data))
-            .catch((err) => console.error("Failed to fetch rooms:", err));
-    }
-
-    function orderIds(id1, id2) {
-        if (id1 > id2) {
-            return id1 + "-" + id2;
-        } else {
-            return id2 + "-" + id1;
-        }
-    }
-
-    function handlePrivateMemberMsg(member) {
-        if (!isCaptchaVerified) {
-            return alert("Please complete the CAPTCHA verification.");
-        }
-        setPrivateMemberMsg(member);
-        const roomId = orderIds(user._id, member._id);
-        joinRoom(roomId, false);
-    }
-
-    if (!user) {
-        return null;
-    }
-
-    if (!isCaptchaVerified) {
-        return <CaptchaVerification onVerify={setIsCaptchaVerified} />;
-    }
+    const q = query.trim().toLowerCase();
+    const visibleRooms = useMemo(() => rooms.filter((r) => r.name.toLowerCase().includes(q)), [rooms, q]);
+    const visibleMembers = useMemo(
+        () =>
+            members
+                .filter((m) => m._id !== user?._id && m.name?.toLowerCase().includes(q))
+                .sort((a, b) => (a.status === "online") === (b.status === "online") ? a.name.localeCompare(b.name) : a.status === "online" ? -1 : 1),
+        [members, user?._id, q]
+    );
+    const unread = (room) => user?.newMessages?.[room] || 0;
+    const onlineCount = members.filter((m) => m.status === "online").length;
 
     return (
-        <>
-            <h2>Available rooms</h2>
-            <ListGroup>
-                {rooms.map((room, idx) => (
-                    <ListGroup.Item
-                        key={idx}
-                        onClick={() => joinRoom(room)}
-                        active={room === currentRoom}
-                        style={{ cursor: "pointer", display: "flex", justifyContent: "space-between" }}
-                    >
-                        {room} {currentRoom !== room && <span className="badge rounded-pill bg-primary">{user?.newMessages?.[room] || 0}</span>}
-                    </ListGroup.Item>
-                ))}
-            </ListGroup>
-            <h2>Members</h2>
-            {members.map((member) => (
-                <ListGroup.Item
-                    key={member.id}
-                    style={{ cursor: "pointer" }}
-                    active={privateMemberMsg?._id === member?._id}
-                    onClick={() => handlePrivateMemberMsg(member)}
-                    disabled={member._id === user._id}
-                >
-                    <Row>
-                        <Col xs={2} className="member-status">
-                            <img src={`http://localhost:5001/uploads/profiles/${member.picture}`} className="member-status-img" alt="profile" />
-                            {member.status === "online" ? (
-                                <i className="fas fa-circle sidebar-online-status"></i>
-                            ) : (
-                                <i className="fas fa-circle sidebar-offline-status"></i>
-                            )}
-                        </Col>
-                        <Col xs={9}>
-                            {member.name}
-                            {member._id === user?._id && " (You)"}
-                            {member.status === "offline" && " (Offline)"}
-                        </Col>
-                        <Col xs={1}>
-                            <span className="badge rounded-pill bg-primary">{user?.newMessages?.[orderIds(member._id, user._id)] || 0}</span>
-                        </Col>
-                    </Row>
-                </ListGroup.Item>
-            ))}
-        </>
+        <aside className="chat-sidebar">
+            <div className="sidebar-head">
+                <div className="d-flex align-items-center gap-2">
+                    <Avatar user={user} size={38} status="online" />
+                    <div className="lh-sm">
+                        <div className="fw-semibold">{user?.name}</div>
+                        <small className="sidebar-muted">{onlineCount} online now</small>
+                    </div>
+                </div>
+                <button className="icon-btn d-md-none" onClick={onClose} aria-label="Close menu">
+                    <i className="fas fa-xmark" />
+                </button>
+            </div>
+
+            <div className="sidebar-search">
+                <i className="fas fa-magnifying-glass" aria-hidden="true" />
+                <input placeholder="Search rooms or people" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search rooms or people" />
+            </div>
+
+            <div className="sidebar-scroll">
+                <p className="sidebar-label">Channels</p>
+                <ul className="sidebar-list">
+                    {visibleRooms.map((room) => (
+                        <li key={room.name}>
+                            <button className={`sidebar-item ${room.name === currentRoom ? "is-active" : ""}`} onClick={() => joinRoom(room.name)}>
+                                <span className="sidebar-item__icon">{room.locked ? <i className="fas fa-lock" /> : "#"}</span>
+                                <span className="sidebar-item__name">{room.name}</span>
+                                {room.name !== currentRoom && unread(room.name) > 0 && <span className="unread">{unread(room.name)}</span>}
+                            </button>
+                        </li>
+                    ))}
+                    {!visibleRooms.length && <li className="sidebar-empty">No channels found</li>}
+                </ul>
+
+                <p className="sidebar-label">Direct messages</p>
+                <ul className="sidebar-list">
+                    {visibleMembers.map((member) => {
+                        const roomId = privateRoomId(user._id, member._id);
+                        return (
+                            <li key={member._id}>
+                                <button
+                                    className={`sidebar-item ${privateMemberMsg?._id === member._id ? "is-active" : ""}`}
+                                    onClick={() => joinRoom(roomId, { member })}
+                                >
+                                    <Avatar user={member} size={28} status={member.status} />
+                                    <span className="sidebar-item__name">
+                                        {member.name}
+                                        {member.blocked && <span className="tag-blocked">blocked</span>}
+                                    </span>
+                                    {privateMemberMsg?._id !== member._id && unread(roomId) > 0 && <span className="unread">{unread(roomId)}</span>}
+                                </button>
+                            </li>
+                        );
+                    })}
+                    {!visibleMembers.length && <li className="sidebar-empty">No people found</li>}
+                </ul>
+            </div>
+        </aside>
     );
 }
 

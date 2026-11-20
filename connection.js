@@ -1,6 +1,18 @@
 const mongoose = require('mongoose');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
+mongoose.set('strictQuery', true);
 
-mongoose.connect(`mongodb+srv://didit:didit123@data1.guug4ed.mongodb.net/?retryWrites=true&w=majority&appName=data1`, ()=> {
-  console.log('connected to mongodb')
-})
+const uri = process.env.MONGODB_URI;
+
+if (!uri) {
+  console.error('MONGODB_URI is not set. Copy .env.example to .env and fill it in.');
+  process.exit(1);
+}
+
+mongoose
+  .connect(uri)
+  .then(() => console.log('connected to mongodb'))
+  .catch((err) => {
+    console.error('Failed to connect to MongoDB:', err.message);
+    process.exit(1);
+  });

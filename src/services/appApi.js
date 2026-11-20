@@ -1,67 +1,65 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-
-// define a service user a base URL
+import { API_URL } from "../config";
 
 const appApi = createApi({
     reducerPath: "appApi",
     baseQuery: fetchBaseQuery({
-        baseUrl: "http://localhost:5001",
+        baseUrl: API_URL,
+        prepareHeaders: (headers, { getState }) => {
+            const token = getState().user?.token;
+            if (token) headers.set("Authorization", `Bearer ${token}`);
+            return headers;
+        },
     }),
+    tagTypes: ["Users"],
 
     endpoints: (builder) => ({
-        // creating the user
+        // body is FormData (name, email, password, optional picture)
         signupUser: builder.mutation({
-            query: (user) => ({
-                url: "/users",
-                method: "POST",
-                body: user,
-            }),
+            query: (formData) => ({ url: "/users", method: "POST", body: formData }),
         }),
 
-        // login
         loginUser: builder.mutation({
-            query: (user) => ({
-                url: "/users/login",
-                method: "POST",
-                body: user,
-            }),
+            query: (user) => ({ url: "/users/login", method: "POST", body: user }),
         }),
 
         checkOTP: builder.mutation({
-            query: (user) => ({
-                url: "/users/otp",
-                method: "POST",
-                body: user,
-            }),
+            query: ({ email, otp }) => ({ url: "/users/otp", method: "POST", body: { email, otp } }),
         }),
 
-        // logout
+        resendOTP: builder.mutation({
+            query: ({ email }) => ({ url: "/users/resend-otp", method: "POST", body: { email } }),
+        }),
+
         logoutUser: builder.mutation({
-            query: (payload) => ({
-                url: "/logout",
-                method: "DELETE",
-                body: payload,
-            }),
+            query: (payload) => ({ url: "/users/logout", method: "POST", body: payload }),
         }),
 
         getChatHistory: builder.query({
-            query: (name) => name ? `/users/history?name=${name}` : `/users/history`,
-        }),        
+            query: (name) => (name ? `/users/history?name=${encodeURIComponent(name)}` : `/users/history`),
+        }),
 
         getAllUsers: builder.query({
             query: () => "/users/all-users",
+            providesTags: ["Users"],
         }),
 
         blockUser: builder.mutation({
-            query: ({ userId, blocked }) => ({
-                url: `/users/block/${userId}`,
-                method: "PUT",
-                body: { blocked },
-            }),
-        }),        
+            query: ({ userId, blocked }) => ({ url: `/users/block/${userId}`, method: "PUT", body: { blocked } }),
+            invalidatesTags: ["Users"],
+        }),
     }),
 });
 
-export const { useSignupUserMutation, useLoginUserMutation, useCheckOTPMutation, useLogoutUserMutation, useGetChatHistoryQuery, useGetAllUsersQuery, useBlockUserMutation } = appApi;
+export const {
+    useSignupUserMutation,
+    useLoginUserMutation,
+    useCheckOTPMutation,
+    useResendOTPMutation,
+    useLogoutUserMutation,
+    useGetChatHistoryQuery,
+    useGetAllUsersQuery,
+    useBlockUserMutation,
+} = appApi;
 
 export default appApi;
